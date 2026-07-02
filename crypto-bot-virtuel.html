@@ -64,7 +64,7 @@
   </header>
 
   <div class="strategy-bar">
-    <span>📐 Stratégie : <strong style="color:var(--text)">RSI 14 sur bougies 15 min</strong> — Achat si RSI &lt; 30 (20 % du cash) · Vente si RSI &gt; 70</span>
+    <span>📐 Stratégie : <strong style="color:var(--text)">RSI 14 sur bougies 15 min</strong> — Achat si RSI &lt; 30 (10 % du cash) · Vente si RSI &gt; 70</span>
     <span id="catchup"></span>
     <button id="alerts" style="border-color:var(--accent);color:var(--accent)">🔔 Alertes : OFF</button>
   </div>
@@ -128,16 +128,31 @@
 const COINS = [
   { sym: 'BTCEUR', name: 'Bitcoin', short: 'BTC' },
   { sym: 'ETHEUR', name: 'Ethereum', short: 'ETH' },
-  { sym: 'SOLEUR', name: 'Solana', short: 'SOL' },
   { sym: 'XRPEUR', name: 'XRP', short: 'XRP' },
   { sym: 'BNBEUR', name: 'BNB', short: 'BNB' },
+  { sym: 'SOLEUR', name: 'Solana', short: 'SOL' },
+  { sym: 'DOGEEUR', name: 'Dogecoin', short: 'DOGE' },
+  { sym: 'TRXEUR', name: 'TRON', short: 'TRX' },
+  { sym: 'ADAEUR', name: 'Cardano', short: 'ADA' },
+  { sym: 'LINKEUR', name: 'Chainlink', short: 'LINK' },
+  { sym: 'XLMEUR', name: 'Stellar', short: 'XLM' },
+  { sym: 'AVAXEUR', name: 'Avalanche', short: 'AVAX' },
+  { sym: 'SUIEUR', name: 'Sui', short: 'SUI' },
+  { sym: 'BCHEUR', name: 'Bitcoin Cash', short: 'BCH' },
+  { sym: 'LTCEUR', name: 'Litecoin', short: 'LTC' },
+  { sym: 'DOTEUR', name: 'Polkadot', short: 'DOT' },
+  { sym: 'SHIBEUR', name: 'Shiba Inu', short: 'SHIB' },
+  { sym: 'PEPEEUR', name: 'Pepe', short: 'PEPE' },
+  { sym: 'NEAREUR', name: 'NEAR', short: 'NEAR' },
+  { sym: 'APTEUR', name: 'Aptos', short: 'APT' },
+  { sym: 'ICPEUR', name: 'Internet Computer', short: 'ICP' },
 ];
 const START_CASH = 1000;
 const RSI_PERIOD = 14;
 const BUY_BELOW = 30, SELL_ABOVE = 70;
-const BUY_FRACTION = 0.20;
+const BUY_FRACTION = 0.10;
 const INTERVAL = '15m';
-const LS_KEY = 'crypto-bot-v1';
+const LS_KEY = 'crypto-bot-v2';
 
 let state = load();
 function load() {
@@ -149,7 +164,7 @@ function load() {
 }
 function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 
-const YOU_KEY = 'crypto-you-v1';
+const YOU_KEY = 'crypto-you-v2';
 let you = loadYou();
 function loadYou() {
   try {
