@@ -47,6 +47,11 @@
   .badge-replay { color: var(--gold); font-size: 11px; }
   button { background: var(--card); border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
   button:hover { border-color: var(--red); color: var(--red); }
+  button.mini { padding: 3px 9px; font-size: 11px; border-radius: 6px; margin: 2px 0 2px 4px; }
+  button.mini.buy { border-color: var(--green); color: var(--green); }
+  button.mini.buy:hover { background: rgba(63,185,80,0.12); color: var(--green); }
+  button.mini.sell { border-color: var(--red); color: var(--red); }
+  button.mini.sell:hover { background: rgba(248,81,73,0.12); }
   .note { color: var(--muted); font-size: 12px; line-height: 1.6; }
   .warn { background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.4); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: var(--gold); margin-bottom: 16px; line-height: 1.5; }
 </style>
@@ -83,11 +88,16 @@
       <div class="label">Trades exécutés</div>
       <div class="value" id="ntrades">0</div>
     </div>
+    <div class="card">
+      <div class="label">👤 Ton portefeuille manuel</div>
+      <div class="value" id="you-total">—</div>
+      <div class="sub" id="you-perf"></div>
+    </div>
   </div>
 
   <table>
     <thead>
-      <tr><th>Crypto</th><th>Prix (temps réel)</th><th>24h</th><th>RSI</th><th>Signal</th><th>Position du bot</th><th>Valeur</th></tr>
+      <tr><th>Crypto</th><th>Prix (temps réel)</th><th>24h</th><th>RSI</th><th>Signal</th><th>Position du bot</th><th>Valeur</th><th>👤 Toi</th></tr>
     </thead>
     <tbody id="tbody"></tbody>
   </table>
@@ -106,6 +116,7 @@
       📡 Prix : WebSocket Binance (temps réel, tick par tick) · Stratégie évaluée à la clôture de chaque bougie de 15 min.<br>
       🔔 Alertes ON : notification, bip et titre clignotant quand une crypto entre en zone d'achat ou de vente (page ouverte requise).<br>
       🔄 PC éteint ou page fermée ? À la réouverture, le bot <strong>rejoue automatiquement</strong> toutes les bougies manquées.<br>
+      👤 Boutons Acheter/Vendre : ton portefeuille virtuel à toi (1 000 € aussi), au prix temps réel — compare-toi au bot, aucune vraie transaction.<br>
       💾 Tout est sauvegardé dans ton navigateur.
     </p>
     <button id="reset">Réinitialiser le bot</button>
@@ -137,6 +148,43 @@ function load() {
   return { cash: START_CASH, positions: {}, trades: [], lastCandle: {}, startedAt: Date.now() };
 }
 function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
+
+const YOU_KEY = 'crypto-you-v1';
+let you = loadYou();
+function loadYou() {
+  try {
+    const s = JSON.parse(localStorage.getItem(YOU_KEY));
+    if (s && s.cash !== undefined) return s;
+  } catch(e) {}
+  return { cash: START_CASH, positions: {}, trades: [], startedAt: Date.now() };
+}
+function saveYou() { localStorage.setItem(YOU_KEY, JSON.stringify(you)); }
+
+function youBuy(sym) {
+  const coin = COINS.find(c => c.sym === sym), l = live[sym];
+  if (!coin || !l) { alert('Prix pas encore re\u00e7u, r\u00e9essaie dans 2 secondes.'); return; }
+  if (you.positions[sym]) { alert('Tu as d\u00e9j\u00e0 une position sur ' + coin.short + '. Vends-la d\u2019abord.'); return; }
+  if (you.cash <= 10) { alert('Plus assez de cash virtuel.'); return; }
+  const amount = you.cash * BUY_FRACTION;
+  const qty = amount / l.price;
+  you.cash -= amount;
+  you.positions[sym] = { qty, avgPrice: l.price };
+  you.trades.unshift({ t: Date.now(), side: 'ACHAT', sym, short: coin.short, price: l.price, amount, rsi: rsiNow[sym], who: 'toi' });
+  if (you.trades.length > 200) you.trades.length = 200;
+  saveYou(); render();
+}
+function youSell(sym) {
+  const coin = COINS.find(c => c.sym === sym), l = live[sym], pos = you.positions[sym];
+  if (!pos) { alert('Aucune position \u00e0 vendre sur ' + (coin ? coin.short : sym) + '.'); return; }
+  if (!l) { alert('Prix pas encore re\u00e7u, r\u00e9essaie dans 2 secondes.'); return; }
+  const amount = pos.qty * l.price;
+  const pnl = amount - pos.qty * pos.avgPrice;
+  you.cash += amount;
+  delete you.positions[sym];
+  you.trades.unshift({ t: Date.now(), side: 'VENTE', sym, short: coin.short, price: l.price, amount, pnl, rsi: rsiNow[sym], who: 'toi' });
+  if (you.trades.length > 200) you.trades.length = 200;
+  saveYou(); render();
+}
 
 const live = {};
 const rsiNow = {};
@@ -303,7 +351,7 @@ function render() {
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = '';
   for (const coin of COINS) {
-    const l = live[coin.sym], pos = state.positions[coin.sym], rsi = rsiNow[coin.sym];
+    const l = live[coin.sym], pos = state.positions[coin.sym], rsi = rsiNow[coin.sym], youPos = you.positions[coin.sym];
     const tr = document.createElement('tr');
     tr.id = 'row-' + coin.sym;
     tr.innerHTML = `
@@ -313,7 +361,8 @@ function render() {
       <td>${rsi !== null && rsi !== undefined ? rsi.toFixed(1) : '—'}</td>
       <td>${signalHtml(rsi)}</td>
       <td>${pos ? pos.qty.toLocaleString('fr-FR', { maximumFractionDigits: 6 }) + ' ' + coin.short : '<span style="color:var(--muted)">—</span>'}</td>
-      <td class="val">${pos && l ? '<strong>' + fmt(pos.qty * l.price, 2) + '</strong>' : '<span style="color:var(--muted)">—</span>'}</td>`;
+      <td class="val">${pos && l ? '<strong>' + fmt(pos.qty * l.price, 2) + '</strong>' : '<span style="color:var(--muted)">—</span>'}</td>
+      <td>${youPos && l ? '<strong>' + fmt(youPos.qty * l.price, 2) + '</strong><br>' : ''}<button class="mini buy" data-buy="${coin.sym}">Acheter</button><button class="mini sell" data-sell="${coin.sym}">Vendre</button></td>`;
     tbody.appendChild(tr);
   }
   renderLog();
@@ -355,20 +404,30 @@ function updateCards() {
   document.getElementById('perf-since').textContent = 'Depuis le ' + new Date(state.startedAt).toLocaleDateString('fr-FR');
   document.getElementById('cash').textContent = fmt(state.cash, 2);
   document.getElementById('ntrades').textContent = state.trades.length;
+  let yv = you.cash;
+  for (const coin of COINS) {
+    const p = you.positions[coin.sym];
+    if (p) yv += p.qty * (live[coin.sym] ? live[coin.sym].price : p.avgPrice);
+  }
+  document.getElementById('you-total').textContent = fmt(yv, 2);
+  const ypnl = yv - START_CASH, ypp = (ypnl / START_CASH) * 100;
+  document.getElementById('you-perf').innerHTML = '<span class="' + (ypnl >= 0 ? 'up' : 'down') + '">' + (ypnl >= 0 ? '+' : '') + fmt(ypnl, 2) + ' (' + (ypp >= 0 ? '+' : '') + ypp.toFixed(2) + ' %)</span>';
 }
 
 function renderLog() {
   const log = document.getElementById('log');
-  if (!state.trades.length) {
+  const all = [...state.trades.map(t => Object.assign({}, t, { who: 'bot' })), ...you.trades].sort((a, b) => b.t - a.t);
+  if (!all.length) {
     log.innerHTML = '<div class="log-empty">Aucun trade pour l\'instant. Le bot attend un signal RSI…</div>';
     return;
   }
-  log.innerHTML = state.trades.slice(0, 50).map(t => `
+  log.innerHTML = all.slice(0, 50).map(t => `
     <div class="log-entry">
       <span>${new Date(t.t).toLocaleString('fr-FR')} ${t.replay ? '<span class="badge-replay">⏪ rejoué</span>' : ''}</span>
+      <span>${t.who === 'toi' ? '👤 Toi' : '🤖 Bot'}</span>
       <span class="${t.side === 'ACHAT' ? 'up' : 'down'}"><strong>${t.side}</strong> ${t.short}</span>
       <span>${fmt(t.amount, 2)} @ ${fmt(t.price)}</span>
-      <span style="color:var(--muted)">RSI ${t.rsi.toFixed(1)}</span>
+      <span style="color:var(--muted)">${t.rsi !== undefined && t.rsi !== null ? 'RSI ' + t.rsi.toFixed(1) : ''}</span>
       ${t.pnl !== undefined ? `<span class="${t.pnl >= 0 ? 'up' : 'down'}">${t.pnl >= 0 ? '+' : ''}${fmt(t.pnl, 2)}</span>` : '<span></span>'}
     </div>`).join('');
 }
@@ -383,9 +442,18 @@ document.getElementById('alerts').addEventListener('click', async () => {
   if (alertsOn) beep(660);
 });
 
+document.getElementById('tbody').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.buy) youBuy(b.dataset.buy);
+  else if (b.dataset.sell) youSell(b.dataset.sell);
+});
+
 document.getElementById('reset').addEventListener('click', () => {
-  if (confirm('Réinitialiser le bot à 1 000 € virtuels ? Tout l\'historique sera effacé.')) {
+  if (confirm('Réinitialiser le bot ET ton portefeuille manuel à 1 000 € chacun ? Tout l\'historique sera effacé.')) {
     state = { cash: START_CASH, positions: {}, trades: [], lastCandle: {}, startedAt: Date.now() };
+    you = { cash: START_CASH, positions: {}, trades: [], startedAt: Date.now() };
+    saveYou();
     save(); render();
     document.getElementById('catchup').innerHTML = '';
   }
