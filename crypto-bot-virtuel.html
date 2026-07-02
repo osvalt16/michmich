@@ -300,20 +300,24 @@ function checkAlerts(isInitial) {
 
 async function processNewCandles(isInitial) {
   const events = [];
-  for (const coin of COINS) {
+  const results = await Promise.all(COINS.map(async coin => {
     try {
-      const candles = await fetchKlines(coin.sym, isInitial ? 500 : 100);
-      const closes = candles.map(c => c.close);
-      const rsis = rsiSeries(closes, RSI_PERIOD);
-      rsiNow[coin.sym] = rsis[rsis.length - 1];
-      const last = state.lastCandle[coin.sym] || 0;
-      for (let i = 0; i < candles.length; i++) {
-        if (candles[i].closeTime > last && rsis[i] !== null) {
-          events.push({ coin, candle: candles[i], rsi: rsis[i] });
-        }
+      return { coin, candles: await fetchKlines(coin.sym, isInitial ? 500 : 100) };
+    } catch (e) { console.warn(e); return null; }
+  }));
+  for (const r of results) {
+    if (!r) continue;
+    const { coin, candles } = r;
+    const closes = candles.map(c => c.close);
+    const rsis = rsiSeries(closes, RSI_PERIOD);
+    rsiNow[coin.sym] = rsis[rsis.length - 1];
+    const last = state.lastCandle[coin.sym] || 0;
+    for (let i = 0; i < candles.length; i++) {
+      if (candles[i].closeTime > last && rsis[i] !== null) {
+        events.push({ coin, candle: candles[i], rsi: rsis[i] });
       }
-      if (candles.length) state.lastCandle[coin.sym] = candles[candles.length - 1].closeTime;
-    } catch (e) { console.warn(e); }
+    }
+    if (candles.length) state.lastCandle[coin.sym] = candles[candles.length - 1].closeTime;
   }
   events.sort((a, b) => a.candle.closeTime - b.candle.closeTime);
   const replayCount = events.length;
