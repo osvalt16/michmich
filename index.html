@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Michmich Crypto — Suivi & Bot Virtuel</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e;
+    --green: #3fb950; --red: #f85149; --accent: #58a6ff; --gold: #d29922;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, "Segoe UI", Roboto, sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .container { max-width: 760px; width: 100%; }
+  h1 { font-size: 28px; margin-bottom: 8px; text-align: center; }
+  .tagline { color: var(--muted); text-align: center; margin-bottom: 32px; font-size: 15px; }
+  .tools { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  @media (max-width: 600px) { .tools { grid-template-columns: 1fr; } }
+  a.tool { display: block; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; text-decoration: none; color: var(--text); transition: border-color 0.15s, transform 0.15s; }
+  a.tool:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .tool .icon { font-size: 34px; margin-bottom: 12px; }
+  .tool h2 { font-size: 18px; margin-bottom: 8px; }
+  .tool p { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .tool .live { display: inline-block; margin-top: 12px; font-size: 12px; color: var(--green); }
+  .live .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 5px; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .warn { background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.4); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: var(--gold); line-height: 1.5; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🪙 Michmich Crypto</h1>
+  <p class="tagline">Suivi de marché en temps réel &amp; bot de trading 100 % virtuel — sans serveur, sans compte, gratuit.</p>
+
+  <div class="tools">
+    <a class="tool" href="crypto-dashboard.html">
+      <div class="icon">📊</div>
+      <h2>Dashboard Marché</h2>
+      <p>Top 20 des cryptos en euros, variations 24h/7j, et suivi de ton portefeuille personnel avec calcul du profit/perte en direct.</p>
+      <span class="live"><span class="dot"></span>Mise à jour toutes les 60 s</span>
+    </a>
+    <a class="tool" href="crypto-bot-virtuel.html">
+      <div class="icon">🤖</div>
+      <h2>Bot Virtuel</h2>
+      <p>Un bot qui trade automatiquement 1 000 € fictifs avec une stratégie RSI, en temps réel. Il rattrape tout seul les heures manquées.</p>
+      <span class="live"><span class="dot"></span>Temps réel WebSocket</span>
+    </a>
+  </div>
+
+  <div class="warn">⚠️ Outils de suivi et de simulation uniquement. Argent du bot 100 % virtuel. Ceci n'est pas un conseil financier — aucun profit n'est garanti en crypto.</div>
+</div>
+</body>
+</html>
