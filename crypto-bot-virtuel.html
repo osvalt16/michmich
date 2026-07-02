@@ -61,6 +61,7 @@
   <div class="strategy-bar">
     <span>📐 Stratégie : <strong style="color:var(--text)">RSI 14 sur bougies 15 min</strong> — Achat si RSI &lt; 30 (20 % du cash) · Vente si RSI &gt; 70</span>
     <span id="catchup"></span>
+    <button id="alerts" style="border-color:var(--accent);color:var(--accent)">🔔 Alertes : OFF</button>
   </div>
 
   <div class="cards">
@@ -96,14 +97,15 @@
 
   <div class="warn">
     ⚠️ <strong>Argent 100 % virtuel.</strong> Ce bot teste une stratégie, il ne prouve pas qu'elle gagnera demain.
-    La plupart des stratégies simples sont perdantes sur la durée — c'est justement ce que ce test va te montrer, gratuitement.
+    Les signaux et alertes sont des informations, pas des recommandations : la décision et la responsabilité restent les tiennes.
     Ceci n'est pas un conseil financier.
   </div>
 
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
     <p class="note">
       📡 Prix : WebSocket Binance (temps réel, tick par tick) · Stratégie évaluée à la clôture de chaque bougie de 15 min.<br>
-      🔄 PC éteint ou page fermée ? À la réouverture, le bot <strong>rejoue automatiquement</strong> toutes les bougies manquées : sa performance est continue, comme s'il n'avait jamais dormi.<br>
+      🔔 Alertes ON : notification, bip et titre clignotant quand une crypto entre en zone d'achat ou de vente (page ouverte requise).<br>
+      🔄 PC éteint ou page fermée ? À la réouverture, le bot <strong>rejoue automatiquement</strong> toutes les bougies manquées.<br>
       💾 Tout est sauvegardé dans ton navigateur.
     </p>
     <button id="reset">Réinitialiser le bot</button>
@@ -136,10 +138,9 @@ function load() {
 }
 function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 
-const live = {};   // sym -> { price, pct24h }
-const rsiNow = {}; // sym -> latest RSI (on closed candles)
+const live = {};
+const rsiNow = {};
 
-// ---------- RSI ----------
 function rsiSeries(closes, period) {
   const out = new Array(closes.length).fill(null);
   if (closes.length <= period) return out;
@@ -159,7 +160,6 @@ function rsiSeries(closes, period) {
   return out;
 }
 
-// ---------- Strategy engine (runs on CLOSED candles only — deterministic, replayable) ----------
 function executeCandle(coin, candle, rsi, isReplay) {
   const sym = coin.sym;
   const pos = state.positions[sym];
@@ -185,8 +185,54 @@ async function fetchKlines(sym, limit) {
   if (!res.ok) throw new Error('klines ' + sym + ' HTTP ' + res.status);
   const raw = await res.json();
   const now = Date.now();
-  // keep only closed candles
   return raw.filter(k => k[6] <= now).map(k => ({ closeTime: k[6], close: parseFloat(k[4]) }));
+}
+
+let alertsOn = localStorage.getItem('crypto-bot-alerts') === 'on';
+const prevZone = {};
+const zoneOf = rsi => rsi === null || rsi === undefined ? null : (rsi < BUY_BELOW ? 'buy' : rsi > SELL_ABOVE ? 'sell' : 'neutral');
+const baseTitle = document.title;
+let flashTimer = null;
+
+function beep(freq) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = freq; o.type = 'sine';
+    g.gain.setValueAtTime(0.25, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + 0.6);
+  } catch(e) {}
+}
+
+function flashTitle(msg) {
+  clearInterval(flashTimer);
+  let on = false;
+  flashTimer = setInterval(() => { document.title = on ? msg : baseTitle; on = !on; }, 900);
+  setTimeout(() => { clearInterval(flashTimer); document.title = baseTitle; }, 30000);
+}
+
+function signalAlert(coin, rsi, zone) {
+  if (!alertsOn) return;
+  const isBuy = zone === 'buy';
+  const label = isBuy ? "🟢 ZONE D'ACHAT" : '🔴 ZONE DE VENTE';
+  const body = coin.name + ' — RSI ' + rsi.toFixed(1) + ' · ' + label + '. À toi de décider (aucune garantie).';
+  beep(isBuy ? 880 : 440);
+  flashTitle((isBuy ? '🟢 ' : '🔴 ') + coin.short + ' !');
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('Signal ' + coin.short, { body, tag: 'sig-' + coin.sym });
+  }
+}
+
+function checkAlerts(isInitial) {
+  for (const coin of COINS) {
+    const z = zoneOf(rsiNow[coin.sym]);
+    if (z === null) continue;
+    const prev = prevZone[coin.sym];
+    if (!isInitial && prev !== undefined && prev !== z && z !== 'neutral') signalAlert(coin, rsiNow[coin.sym], z);
+    prevZone[coin.sym] = z;
+  }
 }
 
 async function processNewCandles(isInitial) {
@@ -206,20 +252,19 @@ async function processNewCandles(isInitial) {
       if (candles.length) state.lastCandle[coin.sym] = candles[candles.length - 1].closeTime;
     } catch (e) { console.warn(e); }
   }
-  // chronological order across all coins — fair replay
   events.sort((a, b) => a.candle.closeTime - b.candle.closeTime);
   const replayCount = events.length;
   const cutoff = Date.now() - 20 * 60 * 1000;
   for (const ev of events) executeCandle(ev.coin, ev.candle, ev.rsi, ev.candle.closeTime < cutoff);
   save();
+  checkAlerts(isInitial);
   if (isInitial && replayCount > 0) {
     document.getElementById('catchup').innerHTML =
-      `<span class="badge-replay">⏪ Rattrapage : ${replayCount} bougies rejouées pendant ton absence</span>`;
+      '<span class="badge-replay">⏪ Rattrapage : ' + replayCount + ' bougies rejouées pendant ton absence</span>';
   }
   render();
 }
 
-// ---------- Live prices via WebSocket ----------
 function connectWS() {
   const streams = COINS.map(c => c.sym.toLowerCase() + '@miniTicker').join('/');
   const ws = new WebSocket('wss://stream.binance.com:9443/stream?streams=' + streams);
@@ -244,7 +289,6 @@ function connectWS() {
   ws.onerror = () => ws.close();
 }
 
-// ---------- UI ----------
 const fmt = (n, d) => n === null || n === undefined || isNaN(n) ? '—'
   : n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: d ?? (n >= 1 ? 2 : 5), maximumFractionDigits: d ?? (n >= 1 ? 2 : 5) });
 
@@ -329,6 +373,16 @@ function renderLog() {
     </div>`).join('');
 }
 
+document.getElementById('alerts').addEventListener('click', async () => {
+  alertsOn = !alertsOn;
+  if (alertsOn && 'Notification' in window && Notification.permission === 'default') {
+    await Notification.requestPermission();
+  }
+  localStorage.setItem('crypto-bot-alerts', alertsOn ? 'on' : 'off');
+  document.getElementById('alerts').textContent = '🔔 Alertes : ' + (alertsOn ? 'ON' : 'OFF');
+  if (alertsOn) beep(660);
+});
+
 document.getElementById('reset').addEventListener('click', () => {
   if (confirm('Réinitialiser le bot à 1 000 € virtuels ? Tout l\'historique sera effacé.')) {
     state = { cash: START_CASH, positions: {}, trades: [], lastCandle: {}, startedAt: Date.now() };
@@ -337,7 +391,7 @@ document.getElementById('reset').addEventListener('click', () => {
   }
 });
 
-// ---------- Boot ----------
+document.getElementById('alerts').textContent = '🔔 Alertes : ' + (alertsOn ? 'ON' : 'OFF');
 render();
 processNewCandles(true);
 connectWS();
@@ -345,4 +399,3 @@ setInterval(() => processNewCandles(false), 60000);
 </script>
 </body>
 </html>
-    
