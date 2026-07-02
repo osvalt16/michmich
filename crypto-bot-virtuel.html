@@ -332,6 +332,18 @@ async function processNewCandles(isInitial) {
   render();
 }
 
+async function seedTickers() {
+  try {
+    const q = encodeURIComponent(JSON.stringify(COINS.map(c => c.sym)));
+    const res = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=' + q);
+    if (!res.ok) return;
+    for (const t of await res.json()) {
+      live[t.symbol] = { price: parseFloat(t.lastPrice), pct24h: parseFloat(t.priceChangePercent) };
+    }
+    render();
+  } catch(e) { console.warn(e); }
+}
+
 function connectWS() {
   const streams = COINS.map(c => c.sym.toLowerCase() + '@miniTicker').join('/');
   const ws = new WebSocket('wss://stream.binance.com:9443/stream?streams=' + streams);
@@ -357,7 +369,7 @@ function connectWS() {
 }
 
 const fmt = (n, d) => n === null || n === undefined || isNaN(n) ? '—'
-  : n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: d ?? (n >= 1 ? 2 : 5), maximumFractionDigits: d ?? (n >= 1 ? 2 : 5) });
+  : n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: d ?? (n >= 1 ? 2 : n >= 0.001 ? 5 : 8), maximumFractionDigits: d ?? (n >= 1 ? 2 : n >= 0.001 ? 5 : 8) });
 
 function signalHtml(rsi) {
   if (rsi === null || rsi === undefined) return '<span class="sig neutral">…</span>';
@@ -480,9 +492,10 @@ document.getElementById('reset').addEventListener('click', () => {
 
 document.getElementById('alerts').textContent = '🔔 Alertes : ' + (alertsOn ? 'ON' : 'OFF');
 render();
+seedTickers();
 processNewCandles(true);
 connectWS();
-setInterval(() => processNewCandles(false), 60000);
+setInterval(() => { processNewCandles(false); seedTickers(); }, 60000);
 </script>
 </body>
 </html>
