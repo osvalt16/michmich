@@ -322,7 +322,7 @@ async function processNewCandles(isInitial) {
     const closes = candles.map(c => c.close);
     const rsis = rsiSeries(closes, RSI_PERIOD);
     rsiNow[coin.sym] = rsis[rsis.length - 1];
-    const last = state.lastCandle[coin.sym] || 0;
+    const last = Math.max(state.lastCandle[coin.sym] || 0, state.startedAt || 0);
     for (let i = 0; i < candles.length; i++) {
       if (candles[i].closeTime > last && rsis[i] !== null) {
         events.push({ coin, candle: candles[i], rsi: rsis[i] });
@@ -461,7 +461,7 @@ function renderLog() {
     log.innerHTML = '<div class="log-empty">Aucun trade pour l\'instant. Le bot attend un signal RSI…</div>';
     return;
   }
-  log.innerHTML = state.trades.slice(0, 50).map(t => `
+  log.innerHTML = [...state.trades].sort((a, b) => b.t - a.t).slice(0, 50).map(t => `
     <div class="log-entry">
       <span>${new Date(t.t).toLocaleString('fr-FR')} ${t.replay ? '<span class="badge-replay">⏪ rejoué</span>' : ''}</span>
       <span class="${t.side === 'ACHAT' ? 'up' : 'down'}"><strong>${t.side}</strong> ${t.short}</span>
