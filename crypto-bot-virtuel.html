@@ -108,7 +108,7 @@
 
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
     <p class="note">
-      🏆 Liste : top 10 par capitalisation (hors stablecoins), actualisée en direct à chaque ouverture de la page.<br>
+      🏆 Liste : top 10 par capitalisation (hors stablecoins), actualisée en direct à chaque ouverture. Les cryptos sans paire EUR (ex. ZEC) sont suivies via leur paire USDC/USDT, convertie en euros. HYPE et LEO restent absents : aucune donnée disponible sur Binance.<br>
       📡 Prix : WebSocket Binance (temps réel, tick par tick) · Stratégie évaluée à la clôture de chaque bougie de 15 min.<br>
       💸 Chaque ordre du bot paie 0,60 % de frais, comme en réel sur Coinbase Advanced.<br>
       🔔 Alertes ON : notification, bip et titre clignotant quand une crypto entre en zone d'achat ou de vente (page ouverte requise).<br>
@@ -156,6 +156,22 @@ function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 const live = {};
 const rsiNow = {};
 
+const RATES = { USDT: null, USDC: null };
+async function fetchRates() {
+  try {
+    const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbols=' + encodeURIComponent('["EURUSDT","EURUSDC"]'));
+    if (!res.ok) return;
+    for (const t of await res.json()) {
+      if (t.symbol === 'EURUSDT') RATES.USDT = parseFloat(t.price);
+      if (t.symbol === 'EURUSDC') RATES.USDC = parseFloat(t.price);
+    }
+  } catch(e) { console.warn(e); }
+}
+function convFor(coin) {
+  if (!coin.quote || coin.quote === 'EUR') return 1;
+  const r = RATES[coin.quote] || RATES.USDT;
+  return r ? 1 / r : null;
+}
 async function buildCoins() {
   try {
     const [infoRes, topRes] = await Promise.all([
@@ -164,20 +180,22 @@ async function buildCoins() {
     ]);
     if (!infoRes.ok || !topRes.ok) throw new Error('HTTP');
     const info = await infoRes.json(), top = await topRes.json();
-    const eurSet = new Set(info.symbols.filter(s => s.quoteAsset === 'EUR' && s.status === 'TRADING').map(s => s.symbol));
+    const pairs = new Set(info.symbols.filter(s => s.status === 'TRADING').map(s => s.symbol));
     const list = [];
     for (const c of top) {
       if (STABLES.has(c.symbol.toLowerCase())) continue;
-      const short = c.symbol.toUpperCase(), sym = short + 'EUR';
-      if (eurSet.has(sym) && !list.some(x => x.sym === sym)) list.push({ sym, name: c.name, short });
+      const short = c.symbol.toUpperCase();
+      const quote = ['EUR', 'USDC', 'USDT'].find(q => pairs.has(short + q));
+      if (quote && !list.some(x => x.short === short)) list.push({ sym: short + quote, name: c.name, short, quote });
       if (list.length === 10) break;
     }
     COINS = list.length >= 5 ? list : FALLBACK;
   } catch(e) { console.warn('classement indisponible, liste de secours', e); COINS = FALLBACK; }
   for (const sym of Object.keys(state.positions)) {
     if (!COINS.some(c => c.sym === sym)) {
-      const short = sym.replace(/EUR$/, '');
-      COINS.push({ sym, name: short + ' (hors top 10)', short });
+      const short = sym.replace(/(EUR|USDC|USDT)$/, '');
+      const quote = sym.endsWith('USDC') ? 'USDC' : sym.endsWith('USDT') ? 'USDT' : 'EUR';
+      COINS.push({ sym, name: short + ' (hors top 10)', short, quote });
     }
   }
 }
@@ -290,7 +308,10 @@ async function processNewCandles(isInitial) {
   }));
   for (const r of results) {
     if (!r) continue;
-    const { coin, candles } = r;
+    const { coin } = r;
+    const conv = convFor(coin);
+    if (conv === null) continue;
+    const candles = conv === 1 ? r.candles : r.candles.map(k => ({ closeTime: k.closeTime, close: k.close * conv }));
     const closes = candles.map(c => c.close);
     const rsis = rsiSeries(closes, RSI_PERIOD);
     rsiNow[coin.sym] = rsis[rsis.length - 1];
@@ -321,7 +342,10 @@ async function seedTickers() {
     const res = await fetch('https://api.binance.com/api/v3/ticker/24hr?symbols=' + q);
     if (!res.ok) return;
     for (const t of await res.json()) {
-      live[t.symbol] = { price: parseFloat(t.lastPrice), pct24h: parseFloat(t.priceChangePercent) };
+      const coin = COINS.find(c => c.sym === t.symbol);
+      const conv = coin ? convFor(coin) : null;
+      if (conv === null) continue;
+      live[t.symbol] = { price: parseFloat(t.lastPrice) * conv, pct24h: parseFloat(t.priceChangePercent) };
     }
     render();
   } catch(e) { console.warn(e); }
@@ -337,7 +361,10 @@ function connectWS() {
   ws.onmessage = ev => {
     const d = JSON.parse(ev.data).data;
     const sym = d.s;
-    const price = parseFloat(d.c), open = parseFloat(d.o);
+    const coin = COINS.find(c => c.sym === sym);
+    const conv = coin ? convFor(coin) : null;
+    if (conv === null) return;
+    const price = parseFloat(d.c) * conv, open = parseFloat(d.o) * conv;
     const prev = live[sym] ? live[sym].price : null;
     live[sym] = { price, pct24h: open ? ((price - open) / open) * 100 : null };
     updateRow(sym, prev);
@@ -457,12 +484,12 @@ document.getElementById('reset').addEventListener('click', () => {
 
 document.getElementById('alerts').textContent = '🔔 Alertes : ' + (alertsOn ? 'ON' : 'OFF');
 (async function init() {
-  await buildCoins();
+  await Promise.all([buildCoins(), fetchRates()]);
   render();
   seedTickers();
   await processNewCandles(true);
   connectWS();
-  setInterval(() => { processNewCandles(false); seedTickers(); }, 60000);
+  setInterval(() => { fetchRates(); processNewCandles(false); seedTickers(); }, 60000);
 })();
 </script>
 </body>
