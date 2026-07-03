@@ -47,11 +47,6 @@
   .badge-replay { color: var(--gold); font-size: 11px; }
   button { background: var(--card); border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
   button:hover { border-color: var(--red); color: var(--red); }
-  button.mini { padding: 3px 9px; font-size: 11px; border-radius: 6px; margin: 2px 0 2px 4px; }
-  button.mini.buy { border-color: var(--green); color: var(--green); }
-  button.mini.buy:hover { background: rgba(63,185,80,0.12); color: var(--green); }
-  button.mini.sell { border-color: var(--red); color: var(--red); }
-  button.mini.sell:hover { background: rgba(248,81,73,0.12); }
   .note { color: var(--muted); font-size: 12px; line-height: 1.6; }
   .warn { background: rgba(210,153,34,0.08); border: 1px solid rgba(210,153,34,0.4); border-radius: 10px; padding: 12px 16px; font-size: 13px; color: var(--gold); margin-bottom: 16px; line-height: 1.5; }
 </style>
@@ -64,7 +59,7 @@
   </header>
 
   <div class="strategy-bar">
-    <span>📐 Stratégie : <strong style="color:var(--text)">RSI 14 sur bougies 15 min</strong> — Achat si RSI &lt; 30 (10 % du cash) · Vente si RSI &gt; 70</span>
+    <span>📐 <strong style="color:var(--text)">RSI 14 / bougies 15 min</strong> — Achat si RSI &lt; 30 (10 % du cash) · Vente si RSI &gt; 70 · <strong style="color:var(--gold)">Frais 0,60 %/ordre (Coinbase Advanced)</strong></span>
     <span id="catchup"></span>
     <button id="alerts" style="border-color:var(--accent);color:var(--accent)">🔔 Alertes : OFF</button>
   </div>
@@ -89,15 +84,15 @@
       <div class="value" id="ntrades">0</div>
     </div>
     <div class="card">
-      <div class="label">👤 Ton portefeuille manuel</div>
-      <div class="value" id="you-total">—</div>
-      <div class="sub" id="you-perf"></div>
+      <div class="label">💸 Frais payés</div>
+      <div class="value" id="fees">—</div>
+      <div class="sub">0,60 % par ordre, comme sur Coinbase Advanced</div>
     </div>
   </div>
 
   <table>
     <thead>
-      <tr><th>Crypto</th><th>Prix (temps réel)</th><th>24h</th><th>RSI</th><th>Signal</th><th>Position du bot</th><th>Valeur</th><th>👤 Toi</th></tr>
+      <tr><th>Crypto</th><th>Prix (temps réel)</th><th>24h</th><th>RSI</th><th>Signal</th><th>Position du bot</th><th>Valeur</th></tr>
     </thead>
     <tbody id="tbody"></tbody>
   </table>
@@ -113,10 +108,11 @@
 
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
     <p class="note">
+      🏆 Liste : top 10 par capitalisation (hors stablecoins), actualisée en direct à chaque ouverture de la page.<br>
       📡 Prix : WebSocket Binance (temps réel, tick par tick) · Stratégie évaluée à la clôture de chaque bougie de 15 min.<br>
+      💸 Chaque ordre du bot paie 0,60 % de frais, comme en réel sur Coinbase Advanced.<br>
       🔔 Alertes ON : notification, bip et titre clignotant quand une crypto entre en zone d'achat ou de vente (page ouverte requise).<br>
       🔄 PC éteint ou page fermée ? À la réouverture, le bot <strong>rejoue automatiquement</strong> toutes les bougies manquées.<br>
-      👤 Boutons Acheter/Vendre : ton portefeuille virtuel à toi (1 000 € aussi), au prix temps réel — compare-toi au bot, aucune vraie transaction.<br>
       💾 Tout est sauvegardé dans ton navigateur.
     </p>
     <button id="reset">Réinitialiser le bot</button>
@@ -125,84 +121,66 @@
 
 <script>
 'use strict';
-const COINS = [
+let COINS = [];
+const FALLBACK = [
   { sym: 'BTCEUR', name: 'Bitcoin', short: 'BTC' },
   { sym: 'ETHEUR', name: 'Ethereum', short: 'ETH' },
-  { sym: 'XRPEUR', name: 'XRP', short: 'XRP' },
   { sym: 'BNBEUR', name: 'BNB', short: 'BNB' },
+  { sym: 'XRPEUR', name: 'XRP', short: 'XRP' },
   { sym: 'SOLEUR', name: 'Solana', short: 'SOL' },
-  { sym: 'DOGEEUR', name: 'Dogecoin', short: 'DOGE' },
   { sym: 'TRXEUR', name: 'TRON', short: 'TRX' },
+  { sym: 'DOGEEUR', name: 'Dogecoin', short: 'DOGE' },
+  { sym: 'XLMEUR', name: 'Stellar', short: 'XLM' },
   { sym: 'ADAEUR', name: 'Cardano', short: 'ADA' },
   { sym: 'LINKEUR', name: 'Chainlink', short: 'LINK' },
-  { sym: 'XLMEUR', name: 'Stellar', short: 'XLM' },
-  { sym: 'AVAXEUR', name: 'Avalanche', short: 'AVAX' },
-  { sym: 'SUIEUR', name: 'Sui', short: 'SUI' },
-  { sym: 'BCHEUR', name: 'Bitcoin Cash', short: 'BCH' },
-  { sym: 'LTCEUR', name: 'Litecoin', short: 'LTC' },
-  { sym: 'DOTEUR', name: 'Polkadot', short: 'DOT' },
-  { sym: 'SHIBEUR', name: 'Shiba Inu', short: 'SHIB' },
-  { sym: 'PEPEEUR', name: 'Pepe', short: 'PEPE' },
-  { sym: 'NEAREUR', name: 'NEAR', short: 'NEAR' },
-  { sym: 'APTEUR', name: 'Aptos', short: 'APT' },
-  { sym: 'ICPEUR', name: 'Internet Computer', short: 'ICP' },
 ];
+const STABLES = new Set(['usdt','usdc','usds','usde','dai','fdusd','tusd','pyusd','busd','usdp','gusd','eurc','eurt','usdtb','susds','usd1','bsc-usd','steth','wsteth','weeth','wbtc','cbbtc','weth','reth','wbeth']);
 const START_CASH = 1000;
 const RSI_PERIOD = 14;
 const BUY_BELOW = 30, SELL_ABOVE = 70;
 const BUY_FRACTION = 0.10;
+const FEE_RATE = 0.006;
 const INTERVAL = '15m';
-const LS_KEY = 'crypto-bot-v2';
+const LS_KEY = 'crypto-bot-v3';
 
 let state = load();
 function load() {
   try {
     const s = JSON.parse(localStorage.getItem(LS_KEY));
-    if (s && s.cash !== undefined) return s;
+    if (s && s.cash !== undefined) { s.fees = s.fees || 0; return s; }
   } catch(e) {}
-  return { cash: START_CASH, positions: {}, trades: [], lastCandle: {}, startedAt: Date.now() };
+  return { cash: START_CASH, positions: {}, trades: [], lastCandle: {}, fees: 0, startedAt: Date.now() };
 }
 function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 
-const YOU_KEY = 'crypto-you-v2';
-let you = loadYou();
-function loadYou() {
-  try {
-    const s = JSON.parse(localStorage.getItem(YOU_KEY));
-    if (s && s.cash !== undefined) return s;
-  } catch(e) {}
-  return { cash: START_CASH, positions: {}, trades: [], startedAt: Date.now() };
-}
-function saveYou() { localStorage.setItem(YOU_KEY, JSON.stringify(you)); }
-
-function youBuy(sym) {
-  const coin = COINS.find(c => c.sym === sym), l = live[sym];
-  if (!coin || !l) { alert('Prix pas encore re\u00e7u, r\u00e9essaie dans 2 secondes.'); return; }
-  if (you.positions[sym]) { alert('Tu as d\u00e9j\u00e0 une position sur ' + coin.short + '. Vends-la d\u2019abord.'); return; }
-  if (you.cash <= 10) { alert('Plus assez de cash virtuel.'); return; }
-  const amount = you.cash * BUY_FRACTION;
-  const qty = amount / l.price;
-  you.cash -= amount;
-  you.positions[sym] = { qty, avgPrice: l.price };
-  you.trades.unshift({ t: Date.now(), side: 'ACHAT', sym, short: coin.short, price: l.price, amount, rsi: rsiNow[sym], who: 'toi' });
-  if (you.trades.length > 200) you.trades.length = 200;
-  saveYou(); render();
-}
-function youSell(sym) {
-  const coin = COINS.find(c => c.sym === sym), l = live[sym], pos = you.positions[sym];
-  if (!pos) { alert('Aucune position \u00e0 vendre sur ' + (coin ? coin.short : sym) + '.'); return; }
-  if (!l) { alert('Prix pas encore re\u00e7u, r\u00e9essaie dans 2 secondes.'); return; }
-  const amount = pos.qty * l.price;
-  const pnl = amount - pos.qty * pos.avgPrice;
-  you.cash += amount;
-  delete you.positions[sym];
-  you.trades.unshift({ t: Date.now(), side: 'VENTE', sym, short: coin.short, price: l.price, amount, pnl, rsi: rsiNow[sym], who: 'toi' });
-  if (you.trades.length > 200) you.trades.length = 200;
-  saveYou(); render();
-}
-
 const live = {};
 const rsiNow = {};
+
+async function buildCoins() {
+  try {
+    const [infoRes, topRes] = await Promise.all([
+      fetch('https://api.binance.com/api/v3/exchangeInfo'),
+      fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=eur&order=market_cap_desc&per_page=30&page=1')
+    ]);
+    if (!infoRes.ok || !topRes.ok) throw new Error('HTTP');
+    const info = await infoRes.json(), top = await topRes.json();
+    const eurSet = new Set(info.symbols.filter(s => s.quoteAsset === 'EUR' && s.status === 'TRADING').map(s => s.symbol));
+    const list = [];
+    for (const c of top) {
+      if (STABLES.has(c.symbol.toLowerCase())) continue;
+      const short = c.symbol.toUpperCase(), sym = short + 'EUR';
+      if (eurSet.has(sym) && !list.some(x => x.sym === sym)) list.push({ sym, name: c.name, short });
+      if (list.length === 10) break;
+    }
+    COINS = list.length >= 5 ? list : FALLBACK;
+  } catch(e) { console.warn('classement indisponible, liste de secours', e); COINS = FALLBACK; }
+  for (const sym of Object.keys(state.positions)) {
+    if (!COINS.some(c => c.sym === sym)) {
+      const short = sym.replace(/EUR$/, '');
+      COINS.push({ sym, name: short + ' (hors top 10)', short });
+    }
+  }
+}
 
 function rsiSeries(closes, period) {
   const out = new Array(closes.length).fill(null);
@@ -229,16 +207,21 @@ function executeCandle(coin, candle, rsi, isReplay) {
   if (rsi === null) return;
   if (!pos && rsi < BUY_BELOW && state.cash > 10) {
     const amount = state.cash * BUY_FRACTION;
-    const qty = amount / candle.close;
+    const fee = amount * FEE_RATE;
+    const qty = (amount - fee) / candle.close;
     state.cash -= amount;
-    state.positions[sym] = { qty, avgPrice: candle.close };
-    state.trades.unshift({ t: candle.closeTime, side: 'ACHAT', sym, short: coin.short, price: candle.close, amount, rsi, replay: !!isReplay });
+    state.fees += fee;
+    state.positions[sym] = { qty, avgPrice: candle.close, cost: amount };
+    state.trades.unshift({ t: candle.closeTime, side: 'ACHAT', sym, short: coin.short, price: candle.close, amount, fee, rsi, replay: !!isReplay });
   } else if (pos && rsi > SELL_ABOVE) {
-    const amount = pos.qty * candle.close;
-    const pnl = amount - pos.qty * pos.avgPrice;
-    state.cash += amount;
+    const gross = pos.qty * candle.close;
+    const fee = gross * FEE_RATE;
+    const proceeds = gross - fee;
+    const pnl = proceeds - (pos.cost !== undefined ? pos.cost : pos.qty * pos.avgPrice);
+    state.cash += proceeds;
+    state.fees += fee;
     delete state.positions[sym];
-    state.trades.unshift({ t: candle.closeTime, side: 'VENTE', sym, short: coin.short, price: candle.close, amount, pnl, rsi, replay: !!isReplay });
+    state.trades.unshift({ t: candle.closeTime, side: 'VENTE', sym, short: coin.short, price: candle.close, amount: proceeds, fee, pnl, rsi, replay: !!isReplay });
   }
   if (state.trades.length > 200) state.trades.length = 200;
 }
@@ -382,7 +365,7 @@ function render() {
   const tbody = document.getElementById('tbody');
   tbody.innerHTML = '';
   for (const coin of COINS) {
-    const l = live[coin.sym], pos = state.positions[coin.sym], rsi = rsiNow[coin.sym], youPos = you.positions[coin.sym];
+    const l = live[coin.sym], pos = state.positions[coin.sym], rsi = rsiNow[coin.sym];
     const tr = document.createElement('tr');
     tr.id = 'row-' + coin.sym;
     tr.innerHTML = `
@@ -392,8 +375,7 @@ function render() {
       <td>${rsi !== null && rsi !== undefined ? rsi.toFixed(1) : '—'}</td>
       <td>${signalHtml(rsi)}</td>
       <td>${pos ? pos.qty.toLocaleString('fr-FR', { maximumFractionDigits: 6 }) + ' ' + coin.short : '<span style="color:var(--muted)">—</span>'}</td>
-      <td class="val">${pos && l ? '<strong>' + fmt(pos.qty * l.price, 2) + '</strong>' : '<span style="color:var(--muted)">—</span>'}</td>
-      <td>${youPos && l ? '<strong>' + fmt(youPos.qty * l.price, 2) + '</strong><br>' : ''}<button class="mini buy" data-buy="${coin.sym}">Acheter</button><button class="mini sell" data-sell="${coin.sym}">Vendre</button></td>`;
+      <td class="val">${pos && l ? '<strong>' + fmt(pos.qty * l.price, 2) + '</strong>' : '<span style="color:var(--muted)">—</span>'}</td>`;
     tbody.appendChild(tr);
   }
   renderLog();
@@ -435,29 +417,21 @@ function updateCards() {
   document.getElementById('perf-since').textContent = 'Depuis le ' + new Date(state.startedAt).toLocaleDateString('fr-FR');
   document.getElementById('cash').textContent = fmt(state.cash, 2);
   document.getElementById('ntrades').textContent = state.trades.length;
-  let yv = you.cash;
-  for (const coin of COINS) {
-    const p = you.positions[coin.sym];
-    if (p) yv += p.qty * (live[coin.sym] ? live[coin.sym].price : p.avgPrice);
-  }
-  document.getElementById('you-total').textContent = fmt(yv, 2);
-  const ypnl = yv - START_CASH, ypp = (ypnl / START_CASH) * 100;
-  document.getElementById('you-perf').innerHTML = '<span class="' + (ypnl >= 0 ? 'up' : 'down') + '">' + (ypnl >= 0 ? '+' : '') + fmt(ypnl, 2) + ' (' + (ypp >= 0 ? '+' : '') + ypp.toFixed(2) + ' %)</span>';
+  document.getElementById('fees').textContent = fmt(state.fees, 2);
 }
 
 function renderLog() {
   const log = document.getElementById('log');
-  const all = [...state.trades.map(t => Object.assign({}, t, { who: 'bot' })), ...you.trades].sort((a, b) => b.t - a.t);
-  if (!all.length) {
+  if (!state.trades.length) {
     log.innerHTML = '<div class="log-empty">Aucun trade pour l\'instant. Le bot attend un signal RSI…</div>';
     return;
   }
-  log.innerHTML = all.slice(0, 50).map(t => `
+  log.innerHTML = state.trades.slice(0, 50).map(t => `
     <div class="log-entry">
       <span>${new Date(t.t).toLocaleString('fr-FR')} ${t.replay ? '<span class="badge-replay">⏪ rejoué</span>' : ''}</span>
-      <span>${t.who === 'toi' ? '👤 Toi' : '🤖 Bot'}</span>
       <span class="${t.side === 'ACHAT' ? 'up' : 'down'}"><strong>${t.side}</strong> ${t.short}</span>
       <span>${fmt(t.amount, 2)} @ ${fmt(t.price)}</span>
+      <span style="color:var(--muted)">${t.fee !== undefined ? 'frais ' + fmt(t.fee, 2) : ''}</span>
       <span style="color:var(--muted)">${t.rsi !== undefined && t.rsi !== null ? 'RSI ' + t.rsi.toFixed(1) : ''}</span>
       ${t.pnl !== undefined ? `<span class="${t.pnl >= 0 ? 'up' : 'down'}">${t.pnl >= 0 ? '+' : ''}${fmt(t.pnl, 2)}</span>` : '<span></span>'}
     </div>`).join('');
@@ -473,29 +447,23 @@ document.getElementById('alerts').addEventListener('click', async () => {
   if (alertsOn) beep(660);
 });
 
-document.getElementById('tbody').addEventListener('click', e => {
-  const b = e.target.closest('button');
-  if (!b) return;
-  if (b.dataset.buy) youBuy(b.dataset.buy);
-  else if (b.dataset.sell) youSell(b.dataset.sell);
-});
-
 document.getElementById('reset').addEventListener('click', () => {
-  if (confirm('Réinitialiser le bot ET ton portefeuille manuel à 1 000 € chacun ? Tout l\'historique sera effacé.')) {
-    state = { cash: START_CASH, positions: {}, trades: [], lastCandle: {}, startedAt: Date.now() };
-    you = { cash: START_CASH, positions: {}, trades: [], startedAt: Date.now() };
-    saveYou();
+  if (confirm('Réinitialiser le bot à 1 000 € virtuels ? Tout l\'historique sera effacé.')) {
+    state = { cash: START_CASH, positions: {}, trades: [], lastCandle: {}, fees: 0, startedAt: Date.now() };
     save(); render();
     document.getElementById('catchup').innerHTML = '';
   }
 });
 
 document.getElementById('alerts').textContent = '🔔 Alertes : ' + (alertsOn ? 'ON' : 'OFF');
-render();
-seedTickers();
-processNewCandles(true);
-connectWS();
-setInterval(() => { processNewCandles(false); seedTickers(); }, 60000);
+(async function init() {
+  await buildCoins();
+  render();
+  seedTickers();
+  await processNewCandles(true);
+  connectWS();
+  setInterval(() => { processNewCandles(false); seedTickers(); }, 60000);
+})();
 </script>
 </body>
 </html>
