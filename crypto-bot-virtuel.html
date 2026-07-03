@@ -108,7 +108,7 @@
 
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
     <p class="note">
-      🏆 Liste : top 10 par capitalisation (hors stablecoins), actualisée en direct à chaque ouverture. Les cryptos sans paire EUR (ex. ZEC) sont suivies via leur paire USDC/USDT, convertie en euros. HYPE et LEO restent absents : aucune donnée disponible sur Binance.<br>
+      🏆 Liste : top 10 par capitalisation (hors stablecoins), limité aux cryptos tradables sur Coinbase (USDC/USD) — reclassé en direct toutes les 15 min. Prix sans paire EUR convertis depuis USDC/USDT. Exclus : TRON et LEO (pas sur Coinbase), HYPE (aucun flux de données Binance).<br>
       📡 Prix : WebSocket Binance (temps réel, tick par tick) · Stratégie évaluée à la clôture de chaque bougie de 15 min.<br>
       💸 Chaque ordre du bot paie 0,60 % de frais, comme en réel sur Coinbase Advanced.<br>
       🔔 Alertes ON : notification, bip et titre clignotant quand une crypto entre en zone d'achat ou de vente (page ouverte requise).<br>
@@ -174,17 +174,24 @@ function convFor(coin) {
 }
 async function buildCoins() {
   try {
-    const [infoRes, topRes] = await Promise.all([
+    const [infoRes, topRes, cbRes] = await Promise.all([
       fetch('https://api.binance.com/api/v3/exchangeInfo'),
-      fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=eur&order=market_cap_desc&per_page=30&page=1')
+      fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=eur&order=market_cap_desc&per_page=30&page=1'),
+      fetch('https://api.exchange.coinbase.com/products').catch(() => null)
     ]);
     if (!infoRes.ok || !topRes.ok) throw new Error('HTTP');
     const info = await infoRes.json(), top = await topRes.json();
+    let cbSet = null;
+    if (cbRes && cbRes.ok) {
+      const prods = await cbRes.json();
+      cbSet = new Set(prods.filter(x => (x.quote_currency === 'USD' || x.quote_currency === 'USDC') && x.status === 'online' && !x.trading_disabled).map(x => x.base_currency));
+    }
     const pairs = new Set(info.symbols.filter(s => s.status === 'TRADING').map(s => s.symbol));
     const list = [];
     for (const c of top) {
       if (STABLES.has(c.symbol.toLowerCase())) continue;
       const short = c.symbol.toUpperCase();
+      if (cbSet && !cbSet.has(short)) continue;
       const quote = ['EUR', 'USDC', 'USDT'].find(q => pairs.has(short + q));
       if (quote && !list.some(x => x.short === short)) list.push({ sym: short + quote, name: c.name, short, quote });
       if (list.length === 10) break;
@@ -351,9 +358,10 @@ async function seedTickers() {
   } catch(e) { console.warn(e); }
 }
 
+let ws = null;
 function connectWS() {
   const streams = COINS.map(c => c.sym.toLowerCase() + '@miniTicker').join('/');
-  const ws = new WebSocket('wss://stream.binance.com:9443/stream?streams=' + streams);
+  ws = new WebSocket('wss://stream.binance.com:9443/stream?streams=' + streams);
   ws.onopen = () => {
     document.getElementById('dot').classList.add('live');
     document.getElementById('status').textContent = 'EN DIRECT — WebSocket Binance';
@@ -483,6 +491,18 @@ document.getElementById('reset').addEventListener('click', () => {
 });
 
 document.getElementById('alerts').textContent = '🔔 Alertes : ' + (alertsOn ? 'ON' : 'OFF');
+async function refreshUniverse() {
+  const before = COINS.map(c => c.sym).sort().join(',');
+  await buildCoins();
+  const after = COINS.map(c => c.sym).sort().join(',');
+  if (before !== after) {
+    if (ws) { try { ws.close(); } catch(e) {} }
+    seedTickers();
+    processNewCandles(false);
+    render();
+  }
+}
+
 (async function init() {
   await Promise.all([buildCoins(), fetchRates()]);
   render();
@@ -490,6 +510,7 @@ document.getElementById('alerts').textContent = '🔔 Alertes : ' + (alertsOn ? 
   await processNewCandles(true);
   connectWS();
   setInterval(() => { fetchRates(); processNewCandles(false); seedTickers(); }, 60000);
+  setInterval(refreshUniverse, 15 * 60 * 1000);
 })();
 </script>
 </body>
