@@ -64,6 +64,8 @@
     <button id="alerts" style="border-color:var(--accent);color:var(--accent)">🔔 Alertes : OFF</button>
   </div>
 
+  <div class="strategy-bar" id="market-bar">🧭 Analyse marché Bitcoin : chargement…</div>
+
   <div class="cards">
     <div class="card">
       <div class="label">Valeur totale du bot</div>
@@ -343,6 +345,40 @@ async function processNewCandles(isInitial) {
   render();
 }
 
+function sma(arr, n) {
+  if (arr.length < n) return null;
+  let s = 0;
+  for (let i = arr.length - n; i < arr.length; i++) s += arr[i];
+  return s / n;
+}
+
+async function updateMarket() {
+  try {
+    const res = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCEUR&interval=1d&limit=400');
+    if (!res.ok) return;
+    const now = Date.now();
+    const closes = (await res.json()).filter(k => k[6] <= now).map(k => parseFloat(k[4]));
+    if (closes.length < 200) return;
+    const price = closes[closes.length - 1];
+    const ma50 = sma(closes, 50), ma200 = sma(closes, 200);
+    const pct = n => closes.length > n ? ((price - closes[closes.length - 1 - n]) / closes[closes.length - 1 - n] * 100) : null;
+    const p7 = pct(7), p30 = pct(30);
+    let regime, cls;
+    if (price > ma200 && ma50 > ma200) { regime = '🟢 Tendance de fond HAUSSIÈRE'; cls = 'up'; }
+    else if (price < ma200 && ma50 < ma200) { regime = '🔴 Tendance de fond BAISSIÈRE'; cls = 'down'; }
+    else { regime = '🟡 Tendance INDÉCISE (transition)'; cls = ''; }
+    const f = n => (n >= 0 ? '+' : '') + n.toFixed(1) + ' %';
+    const fp = n => n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
+    const vs200 = ((price - ma200) / ma200 * 100);
+    document.getElementById('market-bar').innerHTML =
+      '🧭 <strong style="color:var(--text)">Marché Bitcoin :</strong> <strong class="' + cls + '">' + regime + '</strong>' +
+      ' · 7 j : <span class="' + (p7 >= 0 ? 'up' : 'down') + '">' + f(p7) + '</span>' +
+      ' · 30 j : <span class="' + (p30 >= 0 ? 'up' : 'down') + '">' + f(p30) + '</span>' +
+      ' · prix ' + (vs200 >= 0 ? 'au-dessus' : 'en dessous') + ' de sa moyenne 200 j (' + fp(ma200) + ', ' + f(vs200) + ')' +
+      ' <span style="color:var(--muted)">— basé sur les moyennes 50/200 jours, mis à jour toutes les 15 min. Info, pas prédiction.</span>';
+  } catch(e) { console.warn(e); }
+}
+
 async function seedTickers() {
   try {
     const q = encodeURIComponent(JSON.stringify(COINS.map(c => c.sym)));
@@ -511,6 +547,8 @@ async function refreshUniverse() {
   connectWS();
   setInterval(() => { fetchRates(); processNewCandles(false); seedTickers(); }, 60000);
   setInterval(refreshUniverse, 15 * 60 * 1000);
+  updateMarket();
+  setInterval(updateMarket, 15 * 60 * 1000);
 })();
 </script>
 </body>
