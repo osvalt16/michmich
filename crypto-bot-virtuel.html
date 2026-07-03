@@ -97,7 +97,7 @@
 
   <table>
     <thead>
-      <tr><th>Crypto</th><th>Prix (temps réel)</th><th>24h</th><th>RSI</th><th>Signal</th><th>Position du bot</th><th>Valeur</th></tr>
+      <tr><th>Crypto</th><th>Prix (temps réel)</th><th>24h</th><th>RSI</th><th>Tendance</th><th>Signal</th><th>Position du bot</th><th>Valeur</th></tr>
     </thead>
     <tbody id="tbody"></tbody>
   </table>
@@ -115,6 +115,7 @@
     <p class="note">
       🏆 Liste : top 10 par capitalisation (hors stablecoins), limité aux cryptos tradables sur Coinbase (USDC/USD) — reclassé en direct toutes les 15 min. Prix sans paire EUR convertis depuis USDC/USDT. Exclus : TRON et LEO (pas sur Coinbase), HYPE (aucun flux de données Binance).<br>
       📡 Prix : WebSocket Binance (temps réel, tick par tick) · Stratégie évaluée à la clôture de chaque bougie de 15 min.<br>
+      🧭 Colonne Tendance : direction de fond de chaque crypto (moyennes 50/200 sur bougies 15 min). Un ⚠️ s'affiche quand le RSI contredit la tendance — RSI rouge + ↗ peut continuer de monter, RSI vert + ↘ peut continuer de chuter.<br>
       💸 Chaque ordre du bot paie 0,60 % de frais, comme en réel sur Coinbase Advanced.<br>
       🔔 Alertes ON : notification, bip et titre clignotant quand une crypto entre en zone d'achat ou de vente (page ouverte requise).<br>
       🔄 PC éteint ou page fermée ? À la réouverture, le bot <strong>rejoue automatiquement</strong> toutes les bougies manquées.<br>
@@ -160,6 +161,7 @@ function save() { localStorage.setItem(LS_KEY, JSON.stringify(state)); }
 
 const live = {};
 const rsiNow = {};
+const trendNow = {};
 
 const RATES = { USDT: null, USDC: null };
 async function fetchRates() {
@@ -315,7 +317,7 @@ async function processNewCandles(isInitial) {
   const events = [];
   const results = await Promise.all(COINS.map(async coin => {
     try {
-      return { coin, candles: await fetchKlines(coin.sym, isInitial ? 500 : 100) };
+      return { coin, candles: await fetchKlines(coin.sym, isInitial ? 500 : 250) };
     } catch (e) { console.warn(e); return null; }
   }));
   for (const r of results) {
@@ -327,6 +329,8 @@ async function processNewCandles(isInitial) {
     const closes = candles.map(c => c.close);
     const rsis = rsiSeries(closes, RSI_PERIOD);
     rsiNow[coin.sym] = rsis[rsis.length - 1];
+    const s50 = sma(closes, 50), s200 = sma(closes, 200), px = closes[closes.length - 1];
+    trendNow[coin.sym] = s200 === null ? null : (px > s200 && s50 > s200 ? 'up' : (px < s200 && s50 < s200 ? 'down' : 'flat'));
     const last = Math.max(state.lastCandle[coin.sym] || 0, state.startedAt || 0);
     for (let i = 0; i < candles.length; i++) {
       if (candles[i].closeTime > last && rsis[i] !== null) {
@@ -428,10 +432,25 @@ function connectWS() {
 const fmt = (n, d) => n === null || n === undefined || isNaN(n) ? '—'
   : n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', minimumFractionDigits: d ?? (n >= 1 ? 2 : n >= 0.001 ? 5 : 8), maximumFractionDigits: d ?? (n >= 1 ? 2 : n >= 0.001 ? 5 : 8) });
 
-function signalHtml(rsi) {
+function trendHtml(t) {
+  if (t === 'up') return '<span class="up" style="font-size:18px" title="Prix et moyenne 50 au-dessus de la moyenne 200 (bougies 15 min)">↗</span>';
+  if (t === 'down') return '<span class="down" style="font-size:18px" title="Prix et moyenne 50 sous la moyenne 200 (bougies 15 min)">↘</span>';
+  if (t === 'flat') return '<span style="color:var(--muted);font-size:18px" title="Pas de tendance nette">→</span>';
+  return '<span style="color:var(--muted)">…</span>';
+}
+
+function signalHtml(rsi, trend) {
   if (rsi === null || rsi === undefined) return '<span class="sig neutral">…</span>';
-  if (rsi < BUY_BELOW) return '<span class="sig buy">🟢 Zone d\'achat</span>';
-  if (rsi > SELL_ABOVE) return '<span class="sig sell">🔴 Zone de vente</span>';
+  if (rsi < BUY_BELOW) {
+    let h = '<span class="sig buy">🟢 Zone d\'achat</span>';
+    if (trend === 'down') h += '<br><span style="font-size:10px;color:var(--gold)">⚠️ couteau qui tombe : ça peut encore chuter</span>';
+    return h;
+  }
+  if (rsi > SELL_ABOVE) {
+    let h = '<span class="sig sell">🔴 Zone de vente</span>';
+    if (trend === 'up') h += '<br><span style="font-size:10px;color:var(--gold)">⚠️ tendance forte : ça peut continuer de monter</span>';
+    return h;
+  }
   return '<span class="sig neutral">⚪ Neutre</span>';
 }
 
@@ -447,7 +466,8 @@ function render() {
       <td class="price"><strong>${l ? fmt(l.price) : '—'}</strong></td>
       <td class="p24">${l && l.pct24h !== null ? `<span class="${l.pct24h >= 0 ? 'up' : 'down'}">${l.pct24h >= 0 ? '▲' : '▼'} ${Math.abs(l.pct24h).toFixed(2)} %</span>` : '—'}</td>
       <td>${rsi !== null && rsi !== undefined ? '<span class="' + (rsi < BUY_BELOW ? 'rsi-buy' : rsi > SELL_ABOVE ? 'rsi-sell' : '') + '">' + rsi.toFixed(1) + '</span>' : '—'}</td>
-      <td>${signalHtml(rsi)}</td>
+      <td>${trendHtml(trendNow[coin.sym])}</td>
+      <td>${signalHtml(rsi, trendNow[coin.sym])}</td>
       <td>${pos ? pos.qty.toLocaleString('fr-FR', { maximumFractionDigits: 6 }) + ' ' + coin.short : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="val">${pos && l ? '<strong>' + fmt(pos.qty * l.price, 2) + '</strong>' : '<span style="color:var(--muted)">—</span>'}</td>`;
     tbody.appendChild(tr);
