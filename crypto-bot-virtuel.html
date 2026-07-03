@@ -45,6 +45,9 @@
   .log-entry:last-child { border-bottom: none; }
   .log-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
   .badge-replay { color: var(--gold); font-size: 11px; }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+  .rsi-buy { color: var(--green); font-weight: 700; animation: blink 1s infinite; }
+  .rsi-sell { color: var(--red); font-weight: 700; animation: blink 1s infinite; }
   button { background: var(--card); border: 1px solid var(--border); color: var(--muted); border-radius: 8px; padding: 8px 14px; font-size: 13px; cursor: pointer; }
   button:hover { border-color: var(--red); color: var(--red); }
   .note { color: var(--muted); font-size: 12px; line-height: 1.6; }
@@ -443,7 +446,7 @@ function render() {
       <td><strong>${coin.name}</strong> <span style="color:var(--muted);font-size:12px">${coin.short}</span></td>
       <td class="price"><strong>${l ? fmt(l.price) : '—'}</strong></td>
       <td class="p24">${l && l.pct24h !== null ? `<span class="${l.pct24h >= 0 ? 'up' : 'down'}">${l.pct24h >= 0 ? '▲' : '▼'} ${Math.abs(l.pct24h).toFixed(2)} %</span>` : '—'}</td>
-      <td>${rsi !== null && rsi !== undefined ? rsi.toFixed(1) : '—'}</td>
+      <td>${rsi !== null && rsi !== undefined ? '<span class="' + (rsi < BUY_BELOW ? 'rsi-buy' : rsi > SELL_ABOVE ? 'rsi-sell' : '') + '">' + rsi.toFixed(1) + '</span>' : '—'}</td>
       <td>${signalHtml(rsi)}</td>
       <td>${pos ? pos.qty.toLocaleString('fr-FR', { maximumFractionDigits: 6 }) + ' ' + coin.short : '<span style="color:var(--muted)">—</span>'}</td>
       <td class="val">${pos && l ? '<strong>' + fmt(pos.qty * l.price, 2) + '</strong>' : '<span style="color:var(--muted)">—</span>'}</td>`;
